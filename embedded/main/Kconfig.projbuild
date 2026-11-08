@@ -1,0 +1,41 @@
+menu "ESP32 Wi-Fi connection"
+
+    config ESP_WIFI_SSID
+        string "Wi-Fi name (SSID)"
+        help
+            SSID, to which the ESP32 should connect.
+
+    config ESP_WIFI_PASSWORD
+        string "Wi-Fi password"
+        help
+            Password for the Wi-Fi network.
+
+    config ESP_WIFI_MAX_RETRIES
+        int "Number of attempts to reconnect"
+        default 5
+        help
+            Number of times the ESP32 should attempt to reconnect before reporting an error.
+
+endmenu
+
+menu "Azure IoT Hub Configuration"
+    config AZURE_DEVICE_ID
+        string "Device ID"
+        default "your-device-id"
+        help
+            The exact Device ID registered in Azure IoT Hub.
+
+    config AZURE_MQTT_BROKER_URI
+        string "MQTT Broker URI"
+        default "mqtts://your-iot-hub.azure-devices.net:8883"
+
+    config AZURE_MQTT_USERNAME
+        string "MQTT Username"
+        default "your-iot-hub.azure-devices.net/your-device-id/?api-version=2021-04-12"
+
+    config AZURE_MQTT_PASSWORD
+        string "SAS Token (Password)"
+        default "SharedAccessSignature sr=your-iot-hub..."
+        help
+            SAS Token generated for your device, or X.509 certificate string.
+endmenu
