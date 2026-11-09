@@ -1,10 +1,11 @@
-﻿using System.Text.Json;
-using System.Text;
+﻿using Azure.Messaging.EventGrid;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Devices;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
-using Azure.Messaging.EventGrid;
+using System.Text;
+using System.Text.Json;
+using static backend.Utils;
 
 namespace backend;
 
@@ -20,6 +21,8 @@ public class DeviceTelemetry
         ?? throw new InvalidOperationException("DatabaseName environment variable is not set");
     private readonly string CodesContainer = Environment.GetEnvironmentVariable("CodesContainer")
         ?? throw new InvalidOperationException("CodesContainer environment variable is not set");
+    private readonly string LogsContainer = Environment.GetEnvironmentVariable("LogsContainer")
+        ?? throw new InvalidOperationException("LogsContainer environment variable is not set");
 
     public DeviceTelemetry(ILogger<DeviceTelemetry> logger, CosmosClient cosmosClient, ServiceClient iotHubServiceClient)
     {
@@ -53,22 +56,67 @@ public class DeviceTelemetry
                 return;
             }
 
-            _logger.LogInformation($"Device: {payload.devId} | Received code: {payload.code}");
+            var codesContainer = _cosmosClient.GetContainer(DatabaseName, CodesContainer);
+            var logsContainer = _cosmosClient.GetContainer(DatabaseName, LogsContainer);
 
-            var container = _cosmosClient.GetContainer(DatabaseName, CodesContainer);
+            _logger.LogInformation($"Device: {payload.devId} | Received code: {payload.code}");
+            var receivedLog = new
+            {
+                id = Guid.NewGuid().ToString(),
+                device_id = payload.devId,
+                received_code = payload.code,
+                status = "RECEIVED",
+                timestamp = DateTime.UtcNow,
+                partitionKey = payload.devId
+            };
+            await logsContainer.CreateItemAsync(receivedLog, new PartitionKey(receivedLog.partitionKey));
+
 
             bool isValid = false;
+            dynamic validationLog;
             try
             {
-                await container.ReadItemAsync<dynamic>(payload.code, new PartitionKey(StaticPartitionKey));
+                ItemResponse<dynamic> response = await codesContainer.ReadItemAsync<dynamic>(
+                    payload.code,
+                    new PartitionKey(StaticPartitionKey)
+                );
+
                 isValid = true;
+                dynamic matchedCode = response.Resource;
+                string empId = matchedCode.employee_id;
+                string loc = matchedCode.location;
+
                 _logger.LogInformation($"Device: {payload.devId} | Code: {payload.code} is VALID");
+                validationLog = new
+                {
+                    id = Guid.NewGuid().ToString(),
+                    device_id = payload.devId,
+                    code = payload.code,
+                    is_valid = true,
+                    employee_id = empId,
+                    location = loc,
+                    status = "VALIDATED",
+                    timestamp = DateTime.UtcNow,
+                    partitionKey = payload.devId
+                };
             }
             catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 _logger.LogWarning($"Device: {payload.devId} | Code: {payload.code} is NOT VALID");
+                validationLog = new
+                {
+                    id = Guid.NewGuid().ToString(),
+                    device_id = payload.devId,
+                    code = payload.code,
+                    is_valid = false,
+                    status = "VALIDATED",
+                    timestamp = DateTime.UtcNow,
+                    partitionKey = payload.devId
+                };
             }
-            
+
+            await logsContainer.CreateItemAsync(validationLog, new PartitionKey(validationLog.partitionKey));
+
             var responseMessage = new Message(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
             {
                 action = isValid ? "unlock" : "deny",

@@ -26,6 +26,7 @@ void keypad_draw_button(ili9341_t *dev, uint16_t x, uint16_t y, char label, uint
 void ili9341_draw_char(ili9341_t *dev, uint16_t x, uint16_t y, char c, uint16_t fg_color, uint8_t scale);
 void keypad_update_animation(ili9341_t *dev);
 void keypad_control_logic(ili9341_t *dev, uint16_t touch_x, uint16_t touch_y);
+void input_field_draw(ili9341_t *dev, uint16_t start_idx);
 void input_field_draw_status(ili9341_t *dev, char status);
 
 #endif

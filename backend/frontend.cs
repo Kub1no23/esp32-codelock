@@ -53,7 +53,7 @@ public class Frontend
         _logger.LogInformation($"Device: {devId} | Getting last 20 logs");
         var container = _cosmosClient.GetContainer(DatabaseName, LogsContainer);
 
-        var query = new QueryDefinition("SELECT TOP 20 * FROM c WHERE c.devId = @devId ORDER BY c._ts DESC")
+        var query = new QueryDefinition("SELECT TOP 20 * FROM c WHERE c.device_id = @devId ORDER BY c._ts DESC")
             .WithParameter("@devId", devId);
 
         var results = new List<dynamic>();

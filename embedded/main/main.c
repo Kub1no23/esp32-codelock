@@ -95,14 +95,14 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(gpio_config(&irq_conf));
 
-    // touch_init(&display_handle);
+    touch_init(&display_handle);
 
-    // ili9341_setup(&display_handle);
-    // ili9341_set_rotation(&display_handle, display_handle.rotation);
-    // ili9341_fill_screen(&display_handle, 0x0000);
-    // keypad_draw_all(&display_handle);
+    ili9341_setup(&display_handle);
+    ili9341_set_rotation(&display_handle, display_handle.rotation);
+    ili9341_fill_screen(&display_handle, 0x0000);
+    keypad_draw_all(&display_handle);
 
-    mqtt_app_start();
+    mqtt_app_start(&display_handle);
 
     while (1)
     {
