@@ -67,9 +67,8 @@ public class DeviceTelemetry
                 received_code = payload.code,
                 status = "RECEIVED",
                 timestamp = DateTime.UtcNow,
-                partitionKey = payload.devId
             };
-            await logsContainer.CreateItemAsync(receivedLog, new PartitionKey(receivedLog.partitionKey));
+            await logsContainer.CreateItemAsync(receivedLog, new PartitionKey(payload.devId));
 
 
             bool isValid = false;
@@ -97,7 +96,6 @@ public class DeviceTelemetry
                     location = loc,
                     status = "VALIDATED",
                     timestamp = DateTime.UtcNow,
-                    partitionKey = payload.devId
                 };
             }
             catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -111,11 +109,10 @@ public class DeviceTelemetry
                     is_valid = false,
                     status = "VALIDATED",
                     timestamp = DateTime.UtcNow,
-                    partitionKey = payload.devId
                 };
             }
 
-            await logsContainer.CreateItemAsync(validationLog, new PartitionKey(validationLog.partitionKey));
+            await logsContainer.CreateItemAsync(validationLog, new PartitionKey(payload.devId));
 
             var responseMessage = new Message(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
             {
