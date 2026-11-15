@@ -1,10 +1,11 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Cosmos;
+using Microsoft.Azure.Devices;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using Microsoft.Azure.Cosmos;
-using Microsoft.Azure.Devices;
+using static backend.Utils;
 
 namespace backend;
 
@@ -34,8 +35,8 @@ public class Frontend
         var container = _cosmosClient.GetContainer(DatabaseName, DevicesContainer);
         var query = new QueryDefinition("SELECT * FROM c");
 
-        var results = new List<dynamic>();
-        using var iterator = container.GetItemQueryIterator<dynamic>(query);
+        var results = new List<DeviceModel>();
+        using var iterator = container.GetItemQueryIterator<DeviceModel>(query);
         while (iterator.HasMoreResults)
         {
             var response = await iterator.ReadNextAsync();
@@ -56,14 +57,19 @@ public class Frontend
         var query = new QueryDefinition("SELECT TOP 20 * FROM c WHERE c.device_id = @devId ORDER BY c._ts DESC")
             .WithParameter("@devId", devId);
 
-        var results = new List<dynamic>();
+        var results = new List<JsonElement>();
 
         using var iterator = container.GetItemQueryIterator<dynamic>(query, requestOptions: new QueryRequestOptions { PartitionKey = new PartitionKey(devId) });
 
         while (iterator.HasMoreResults)
         {
             var response = await iterator.ReadNextAsync();
-            results.AddRange(response.Resource);
+
+            foreach (var item in response.Resource)
+            {
+                var jsonElement = JsonDocument.Parse(item.ToString()).RootElement;
+                results.Add(jsonElement);
+            }
         }
 
         return new OkObjectResult(results);
