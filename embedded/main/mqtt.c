@@ -37,8 +37,13 @@ static void reset_callback(void *arg)
 {
     ili9341_t *dev = (ili9341_t *)arg;
 
-    current_state = STATE_IDLE;
-    input_field_draw(dev, 0);
+    reset_lock_state();
+
+    if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+    {
+        input_field_draw(dev, 0, NULL);
+        xSemaphoreGive(dev->spi_lock);
+    }
 
     ESP_LOGI(TAG, "State reset");
 }
@@ -65,7 +70,12 @@ static void process_cloud_message(ili9341_t *dev, const char *data, size_t data_
         {
             ESP_LOGI(TAG, "Cloud confirmed PIN");
             current_state = STATE_UNLOCKED;
-            input_field_draw_status(dev, 'V');
+
+            if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+            {
+                input_field_draw_status(dev, 'V');
+                xSemaphoreGive(dev->spi_lock);
+            }
 
             // reset
             esp_timer_start_once(reset_timer, 3000000); // 3s
@@ -73,8 +83,13 @@ static void process_cloud_message(ili9341_t *dev, const char *data, size_t data_
         else if (strcmp(action->valuestring, "deny") == 0)
         {
             ESP_LOGW(TAG, "Cloud rejected PIN");
-            current_state = STATE_IDLE;
-            input_field_draw_status(dev, 'X');
+            current_state = STATE_REJECTED;
+
+            if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+            {
+                input_field_draw_status(dev, 'X');
+                xSemaphoreGive(dev->spi_lock);
+            }
 
             // reset
             esp_timer_start_once(reset_timer, 3000000);
@@ -181,9 +196,9 @@ void mqtt_check_timeout(void)
     {
         uint64_t current_time_us = esp_timer_get_time();
 
-        if ((current_time_us - time_pin_sent_us) > 5000000) // 5 sec
+        if ((current_time_us - time_pin_sent_us) > 10000000) // 10 sec
         {
-            ESP_LOGE(TAG, "TIMEOUT: Cloud did not respond within 5 seconds");
+            ESP_LOGE(TAG, "TIMEOUT: Cloud did not respond within 10 seconds");
 
             // Zde můžeš fyzicky pípnout bzučákem nebo vypsat chybu na displej
             current_state = STATE_IDLE;

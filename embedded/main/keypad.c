@@ -14,6 +14,7 @@ static const char keypad_chars[4][3] = {
 static const char *one_time = "111111";
 static uint8_t blink_state = 1;
 static char input_buffer[7] = {0};
+static char loading_chars[4] = {'\0'};
 
 void keypad_draw_all(ili9341_t *dev)
 {
@@ -116,10 +117,11 @@ char keypad_get_char(uint16_t touch_x, uint16_t touch_y)
     return keypad_chars[row][col];
 }
 
-void input_field_draw(ili9341_t *dev, uint16_t start_idx)
+void input_field_draw(ili9341_t *dev, uint16_t start_idx, char *optional_buffer)
 {
 
-    int len = strlen(input_buffer);
+    char *buffer = optional_buffer ? optional_buffer : input_buffer;
+    int len = strlen(buffer);
 
     uint16_t char_width = 8 * 2;
     uint16_t step_x = char_width + CHAR_SPACING;
@@ -150,7 +152,7 @@ void input_field_draw(ili9341_t *dev, uint16_t start_idx)
         }
         else
         {
-            c_to_draw = input_buffer[i];
+            c_to_draw = buffer[i];
         }
 
         ili9341_draw_char(dev, cursor_x, cursor_y, c_to_draw, TEXT_COLOR, 2);
@@ -182,12 +184,43 @@ void input_field_draw_status(ili9341_t *dev, char status)
 
 void keypad_update_animation(ili9341_t *dev)
 {
-    int len = strlen(input_buffer);
-
-    if (len > 0 && len < 6)
+    if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
     {
-        blink_state = !blink_state;
-        input_field_draw(dev, len - 1);
+        int len = strlen(input_buffer);
+
+        if (len > 0 && len <= 6)
+        {
+            blink_state = !blink_state;
+            input_field_draw(dev, len - 1, NULL);
+        }
+        xSemaphoreGive(dev->spi_lock);
+    }
+}
+
+void keypad_waiting_animation(ili9341_t *dev)
+{
+    if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+    {
+        if (get_lock_state() != STATE_WAITING_FOR_CLOUD)
+        {
+            xSemaphoreGive(dev->spi_lock);
+            return;
+        }
+
+        int len = strlen(loading_chars) + 1;
+        if (len > 3)
+        {
+            len = 0;
+            loading_chars[0] = '\0';
+        }
+        else
+        {
+            loading_chars[len - 1] = '*';
+            loading_chars[len] = '\0';
+        }
+
+        input_field_draw(dev, len >= 2 ? len - 2 : 0, loading_chars);
+        xSemaphoreGive(dev->spi_lock);
     }
 }
 
@@ -205,7 +238,12 @@ void keypad_control_logic(ili9341_t *dev, uint16_t touch_x, uint16_t touch_y)
             if (len >= 1)
             {
                 input_buffer[len - 1] = '\0';
-                input_field_draw(dev, len >= 2 ? len - 2 : len - 1);
+
+                if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+                {
+                    input_field_draw(dev, len >= 2 ? len - 2 : len - 1, NULL);
+                    xSemaphoreGive(dev->spi_lock);
+                }
             }
         }
         else if (pressed_char == 'V')
@@ -215,24 +253,40 @@ void keypad_control_logic(ili9341_t *dev, uint16_t touch_x, uint16_t touch_y)
                 char password[7];
                 strcpy(password, input_buffer);
 
-                input_field_draw(dev, 0);
-
-                if (strcmp(password, one_time) == 0)
+                if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
                 {
-                    input_field_draw_status(dev, 'v');
+                    input_field_draw(dev, 0, NULL);
+                    xSemaphoreGive(dev->spi_lock);
+                }
+
+                if (strcmp(password, one_time) == 0) // just for testing
+                {
+                    if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+                    {
+                        input_field_draw_status(dev, 'v');
+                        xSemaphoreGive(dev->spi_lock);
+                    }
 
                     // reset
                     vTaskDelay(pdMS_TO_TICKS(3000));
                     input_buffer[0] = '\0';
-                    input_field_draw(dev, 0);
+
+                    if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+                    {
+                        input_field_draw(dev, 0, NULL);
+                        xSemaphoreGive(dev->spi_lock);
+                    }
                 }
-                else
+                else // real request
                 {
-                    // wifi req
-                    input_buffer[0] = '*';
-                    input_buffer[1] = '\0';
+                    input_buffer[0] = '\0';
+                    loading_chars[0] = '\0';
                     send_pin_to_cloud(password);
-                    // input_field_draw_status(dev, 'x');
+                    while (get_lock_state() == STATE_WAITING_FOR_CLOUD)
+                    {
+                        keypad_waiting_animation(dev);
+                        vTaskDelay(pdMS_TO_TICKS(500));
+                    }
                 }
             }
         }
@@ -242,7 +296,12 @@ void keypad_control_logic(ili9341_t *dev, uint16_t touch_x, uint16_t touch_y)
             {
                 input_buffer[len] = pressed_char;
                 input_buffer[len + 1] = '\0';
-                input_field_draw(dev, len > 0 ? len - 1 : 0);
+
+                if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+                {
+                    input_field_draw(dev, len > 0 ? len - 1 : 0, NULL);
+                    xSemaphoreGive(dev->spi_lock);
+                }
             }
         }
     }

@@ -9,7 +9,8 @@ typedef enum
 {
     STATE_IDLE,
     STATE_WAITING_FOR_CLOUD,
-    STATE_UNLOCKED
+    STATE_UNLOCKED,
+    STATE_REJECTED
 } lock_state_t;
 
 void mqtt_app_start(ili9341_t *dev);

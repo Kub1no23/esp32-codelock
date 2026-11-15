@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "nvs_flash.h"
@@ -70,11 +71,17 @@ void app_main(void)
     ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &devcfg, &spi));
     ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &touch_devcfg, &touch_spi));
 
+    SemaphoreHandle_t display_mutex = xSemaphoreCreateMutex();
+    if (display_mutex == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create display mutex");
+    }
     ili9341_t display_handle = {
         .pin_dc = GPIO_NUM_2,
         .pin_rst = GPIO_NUM_4,
         .spi = spi,
         .touch_spi = touch_spi,
+        .spi_lock = display_mutex,
         .rotation = ILI9341_ROTATION_PORTRAIT};
 
     gpio_config_t io_conf = {

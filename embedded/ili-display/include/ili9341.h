@@ -55,6 +55,7 @@ typedef struct
     gpio_num_t pin_bckl;
     spi_device_handle_t spi;
     spi_device_handle_t touch_spi;
+    SemaphoreHandle_t spi_lock;
     short width;
     short height;
     ili9341_rotation_t rotation;
