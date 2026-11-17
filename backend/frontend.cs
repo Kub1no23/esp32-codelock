@@ -5,9 +5,9 @@ using Microsoft.Azure.Devices;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using static backend.Utils;
+using static Backend.Utils.Utils;
 
-namespace backend;
+namespace Backend;
 
 public class Frontend
 {
@@ -107,9 +107,16 @@ public class Frontend
     [Function("PostDeviceSignal")]
     public async Task<IActionResult> PostDeviceSignal(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "devices/{devId}/signal")] HttpRequest req,
-        [FromBody] Utils.SignalRequest payload,
+        [FromBody] SignalRequest? payload,
         string devId)
     {
+
+        if (payload == null)
+        {
+            _logger.LogError($"Device: {devId} | Request body is empty or invalid JSON");
+            return new BadRequestObjectResult("Invalid or missing JSON payload. Check Content-Type and format");
+        }
+
         if (payload.signalType == null)
         {
             _logger.LogError($"Device: {devId} | Missing parameter 'signalType' in request body");
@@ -121,19 +128,14 @@ public class Frontend
 
         switch (payload.signalType)
         {
-            case Utils.SignalType.Open:
+            case SignalType.Open:
                 methodName = "open_lock";
                 payloadString = JsonSerializer.Serialize(new { timeout_ms = 5000 });
                 break;
 
-            case Utils.SignalType.Restart:
+            case SignalType.Restart:
                 methodName = "reboot_device";
-                payloadString = JsonSerializer.Serialize(new { reason = "user_requested_restart" });
-                break;
-
-            case Utils.SignalType.Shutdown:
-                methodName = "deep_sleep";
-                payloadString = JsonSerializer.Serialize(new { sleep_time_ms = 0 });
+                payloadString = JsonSerializer.Serialize(new { reason = "remote restart" });
                 break;
 
             default:

@@ -2,15 +2,14 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace backend
+namespace Backend.Utils
 {
     public class Utils
     {
         public enum SignalType
         {
             Open,
-            Restart,
-            Shutdown
+            Restart
         }
 
 
