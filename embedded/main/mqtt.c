@@ -16,6 +16,7 @@ static const char *TAG = "AZURE_MQTT";
 
 #define TOPIC_PUBLISH_TELEMETRY "devices/" CONFIG_AZURE_DEVICE_ID "/messages/events/"
 #define TOPIC_SUBSCRIBE_C2D "devices/" CONFIG_AZURE_DEVICE_ID "/messages/devicebound/#"
+#define TOPIC_SUBSCRIBE_METHODS "$iothub/methods/POST/#"
 
 static volatile lock_state_t current_state = STATE_IDLE;
 static uint64_t time_pin_sent_us = 0;
@@ -46,6 +47,62 @@ static void reset_callback(void *arg)
     }
 
     ESP_LOGI(TAG, "State reset");
+}
+
+static void execute_direct_method(ili9341_t *dev, esp_mqtt_client_handle_t client, const char *method_name, const char *rid)
+{
+    int status_code = 404;
+    const char *response_payload = "{}";
+    bool reboot = false;
+
+    if (strcmp(method_name, "get_status") == 0)
+    {
+        ESP_LOGI(TAG, "Executing 'get_status'...");
+        response_payload = "{\"device_state\": \"online\"}";
+        status_code = 200;
+    }
+    else if (strcmp(method_name, "open_lock") == 0)
+    {
+        ESP_LOGI(TAG, "Executing 'open_lock'...");
+
+        current_state = STATE_UNLOCKED;
+        if (xSemaphoreTake(dev->spi_lock, portMAX_DELAY) == pdTRUE)
+        {
+            input_field_draw_status(dev, 'V');
+            xSemaphoreGive(dev->spi_lock);
+        }
+
+        esp_timer_start_once(reset_timer, 3000000);
+
+        response_payload = "{\"success\":true}";
+        status_code = 200;
+    }
+    else if (strcmp(method_name, "reboot_device") == 0)
+    {
+        ESP_LOGW(TAG, "Executing 'reboot_device'...");
+        reboot = true;
+
+        response_payload = "{\"success\":true}";
+        status_code = 200;
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Unknown method: %s", method_name);
+        response_payload = "{\"success\":false,\"error\":\"method not found\"}";
+    }
+
+    char response_topic[128];
+    snprintf(response_topic, sizeof(response_topic), "$iothub/methods/res/%d/?$rid=%s", status_code, rid);
+
+    esp_mqtt_client_publish(client, response_topic, response_payload, 0, 1, 0);
+    ESP_LOGI(TAG, "Sent method response: %s", response_payload);
+
+    if (reboot)
+    {
+        ESP_LOGW(TAG, "Rebooting in 1 second...");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
+    }
 }
 
 static void process_cloud_message(ili9341_t *dev, const char *data, size_t data_len)
@@ -110,12 +167,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT Connected to Azure IoT Hub");
         esp_mqtt_client_subscribe(mqtt_client, TOPIC_SUBSCRIBE_C2D, 1);
+        esp_mqtt_client_subscribe(mqtt_client, TOPIC_SUBSCRIBE_METHODS, 1);
         break;
 
     case MQTT_EVENT_DATA:
         ESP_LOGI(TAG, "Received message from cloud. Topic len: %d, Data len: %d", event->topic_len, event->data_len);
 
-        if (strncmp(event->topic, "devices/" CONFIG_AZURE_DEVICE_ID "/messages/devicebound/", 30) == 0)
+        if (strncmp(event->topic, "devices/" CONFIG_AZURE_DEVICE_ID "/messages/devicebound/", 44) == 0)
         {
             if (current_state == STATE_WAITING_FOR_CLOUD)
             {
@@ -126,6 +184,34 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                 ESP_LOGW(TAG, "Ignoring message, lock is not waiting for confirmation");
             }
         }
+        else if (strncmp(event->topic, "$iothub/methods/POST/", 21) == 0)
+        {
+            ESP_LOGI(TAG, "Received direct method call from cloud. Topic len: %d, Data len: %d", event->topic_len, event->data_len);
+
+            char safe_topic[128];
+            if (event->topic_len >= sizeof(safe_topic))
+            {
+                ESP_LOGE(TAG, "Topic is too long to parse safely");
+                return;
+            }
+            memcpy(safe_topic, event->topic, event->topic_len);
+            safe_topic[event->topic_len] = '\0';
+
+            char method_name[32] = {0};
+            char rid[16] = {0};
+
+            if (sscanf(safe_topic + 21, "%31[^/]/?$rid=%15s", method_name, rid) == 2)
+            {
+                ESP_LOGI(TAG, "Method: %s, RID: %s", method_name, rid);
+
+                execute_direct_method(dev, event->client, method_name, rid);
+            }
+            else
+            {
+                ESP_LOGE(TAG, "Failed to parse method name or RID from topic");
+            }
+        }
+
         break;
 
     case MQTT_EVENT_DISCONNECTED:
