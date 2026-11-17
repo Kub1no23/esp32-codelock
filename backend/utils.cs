@@ -12,22 +12,24 @@ namespace Backend.Utils
             Restart
         }
 
-
         //DTO
-        public record SignalRequest(SignalType? signalType);
+        public class SignalRequest
+        {
+            public SignalType? signalType { get; set; }
+        }
         public record CodeRequest(string devId, string code);
 
         //DB
         public class CodeDocument
         {
-            public string id { get; set; }
-            public string location { get; set; }
-            public string employee_id { get; set; }
+            public required string id { get; set; }
+            public required string location { get; set; }
+            public required string employee_id { get; set; }
         }
         public class DeviceModel
         {
-            public string id { get; set; }
-            public string location { get; set; }
+            public required string id { get; set; }
+            public required string location { get; set; }
         }
     }
 }
