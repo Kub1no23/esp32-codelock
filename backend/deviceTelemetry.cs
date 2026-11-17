@@ -5,9 +5,9 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using System.Text;
 using System.Text.Json;
-using static backend.Utils;
+using static Backend.Utils.Utils;
 
-namespace backend;
+namespace Backend;
 
 public class DeviceTelemetry
 {
@@ -42,7 +42,7 @@ public class DeviceTelemetry
             string? base64 = eventData.GetProperty("body").GetString();
             string jsonPayload = Encoding.UTF8.GetString(Convert.FromBase64String(base64 ?? ""));
 
-            var payload = JsonSerializer.Deserialize<Utils.CodeRequest>(jsonPayload);
+            var payload = JsonSerializer.Deserialize<CodeRequest>(jsonPayload);
 
             if (payload == null || string.IsNullOrEmpty(payload.devId) || string.IsNullOrEmpty(payload.code))
             {
